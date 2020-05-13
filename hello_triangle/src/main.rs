@@ -16,7 +16,9 @@ fn main() {
 
         clear_color: wgpu::Color,
 
-        render_pipeline: wgpu::RenderPipeline,
+        first_pipeline: bool,
+        render_pipelines : Vec<wgpu::RenderPipeline>,
+        //render_pipeline: wgpu::RenderPipeline,
 
         size: winit::dpi::PhysicalSize<u32>,
     }
@@ -42,6 +44,10 @@ fn main() {
                 limits: Default::default(),
             }).await;
 
+            const VERT_SHADERS: &'static [&'static str] = &[include_str!("shader.vert"), include_str!("shader_2.vert")];
+            const FRAG_SHADERS: &'static [&'static str] = &[include_str!("shader.frag"), include_str!("shader_2.frag")];
+            let mut render_pipelines : Vec<wgpu::RenderPipeline> = Vec::new();
+
             let sc_desc = wgpu::SwapChainDescriptor {
                 usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -53,61 +59,65 @@ fn main() {
 
             let clear_color = wgpu::Color::BLACK;
 
-            let vs_src = include_str!("shader.vert");
-            let fs_src = include_str!("shader.frag");
-
-            let vs_spirv = glsl_to_spirv::compile(vs_src, glsl_to_spirv::ShaderType::Vertex).unwrap();
-            let fs_spirv = glsl_to_spirv::compile(fs_src, glsl_to_spirv::ShaderType::Fragment).unwrap();
-
-            let vs_data = wgpu::read_spirv(vs_spirv).unwrap();
-            let fs_data = wgpu::read_spirv(fs_spirv).unwrap();
-
-            let vs_module = device.create_shader_module(&vs_data);
-            let fs_module = device.create_shader_module(&fs_data);
-
-            let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[],
-            });
-            
-            let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                layout: &render_pipeline_layout,
-                vertex_stage: wgpu::ProgrammableStageDescriptor {
-                    module: &vs_module,
-                    entry_point: "main", // 1.
-                },
-                fragment_stage: Some(wgpu::ProgrammableStageDescriptor { // 2.
-                    module: &fs_module,
-                    entry_point: "main",
-                }),
-
-                rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: wgpu::CullMode::Back,
-                    depth_bias: 0,
-                    depth_bias_slope_scale: 0.0,
-                    depth_bias_clamp: 0.0,
-                }),
-
-                color_states: &[
-                    wgpu::ColorStateDescriptor {
-                        format: sc_desc.format,
-                        color_blend: wgpu::BlendDescriptor::REPLACE,
-                        alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                        write_mask: wgpu::ColorWrite::ALL,
+            for ctr in 0..2 {
+    
+                let vs_src = VERT_SHADERS[ctr];
+                let fs_src = FRAG_SHADERS[ctr];
+    
+                let vs_spirv = glsl_to_spirv::compile(vs_src, glsl_to_spirv::ShaderType::Vertex).unwrap();
+                let fs_spirv = glsl_to_spirv::compile(fs_src, glsl_to_spirv::ShaderType::Fragment).unwrap();
+    
+                let vs_data = wgpu::read_spirv(vs_spirv).unwrap();
+                let fs_data = wgpu::read_spirv(fs_spirv).unwrap();
+    
+                let vs_module = device.create_shader_module(&vs_data);
+                let fs_module = device.create_shader_module(&fs_data);
+    
+                let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    bind_group_layouts: &[],
+                });
+                
+                let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    layout: &render_pipeline_layout,
+                    vertex_stage: wgpu::ProgrammableStageDescriptor {
+                        module: &vs_module,
+                        entry_point: "main",
                     },
-                ],
+                    fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                        module: &fs_module,
+                        entry_point: "main",
+                    }),
+    
+                    rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: wgpu::CullMode::Back,
+                        depth_bias: 0,
+                        depth_bias_slope_scale: 0.0,
+                        depth_bias_clamp: 0.0,
+                    }),
+    
+                    color_states: &[
+                        wgpu::ColorStateDescriptor {
+                            format: sc_desc.format,
+                            color_blend: wgpu::BlendDescriptor::REPLACE,
+                            alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                            write_mask: wgpu::ColorWrite::ALL,
+                        },
+                    ],
+    
+                    primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+                    depth_stencil_state: None,
+                    vertex_state: wgpu::VertexStateDescriptor {
+                        index_format: wgpu::IndexFormat::Uint16, 
+                        vertex_buffers: &[],
+                    },
+                    sample_count: 1,
+                    sample_mask: !0,
+                    alpha_to_coverage_enabled: false,
+                });
 
-                primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-                depth_stencil_state: None,
-                vertex_state: wgpu::VertexStateDescriptor {
-                    index_format: wgpu::IndexFormat::Uint16, 
-                    vertex_buffers: &[],
-                },
-                sample_count: 1,
-                sample_mask: !0,
-                alpha_to_coverage_enabled: false,
-            });
-
+                render_pipelines.push(render_pipeline);
+            }
 
             Self {
                 surface,
@@ -117,11 +127,12 @@ fn main() {
                 sc_desc,
                 swap_chain,
                 clear_color,
-                render_pipeline,
+                first_pipeline : true,
+                render_pipelines,
                 size,
             }
 
-        }
+        } 
 
         fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
             self.size = new_size;
@@ -143,6 +154,23 @@ fn main() {
                         a: 1.0,
                     };
                     true
+                },
+                WindowEvent::KeyboardInput {
+                    input,
+                    ..
+                } => {
+                    match input {
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(VirtualKeyCode::Space),
+                            ..
+                        } => {
+                            println!("Switching pipelines! {}", self.first_pipeline);
+                            self.first_pipeline = !self.first_pipeline;
+                            true
+                        }
+                        _ => false
+                    }
                 }
                 _ => false,
             }
@@ -173,7 +201,11 @@ fn main() {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            if self.first_pipeline {
+                render_pass.set_pipeline(&self.render_pipelines[0]);
+            } else {
+                render_pass.set_pipeline(&self.render_pipelines[1]);
+            }
             render_pass.draw(0..3, 0..1);
 
             drop(render_pass);
@@ -221,9 +253,6 @@ fn main() {
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         // new_inner_size is &mut so w have to dereference it twice
                         state.resize(**new_inner_size);
-                    }
-                    WindowEvent::CursorMoved {position, ..} => {
-                        state.render();
                     }
                     _ => {}
                 }
