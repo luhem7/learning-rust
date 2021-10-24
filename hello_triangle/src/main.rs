@@ -4,8 +4,61 @@ use winit::{
     window::{WindowBuilder, Window},
 };
 
+mod user_interface;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+unsafe impl bytemuck::Pod for Vertex {}
+
+unsafe impl bytemuck::Zeroable for Vertex {}
+
+impl Vertex {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        use std::mem;
+        wgpu::VertexBufferDescriptor {
+            stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float3,
+                },
+                wgpu::VertexAttributeDescriptor {
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float3,
+                },
+            ]
+        }
+    }
+}
+
+
 
 fn main() {
+    //main.rs
+    // main.rs
+    const VERTICES: &[Vertex] = &[
+        Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
+        Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
+        Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
+        Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
+        Vertex { position: [0.44147372, 0.2347359, 0.0],color: [0.5, 0.0, 0.5] }, // E
+    ];
+
+    const INDICES: &[u16] = &[
+        0, 1, 4,
+        1, 2, 4,
+        2, 3, 4,
+    ];
+
+
     struct State {
         surface: wgpu::Surface,
         adapter: wgpu::Adapter,
@@ -16,11 +69,17 @@ fn main() {
 
         clear_color: wgpu::Color,
 
-        first_pipeline: bool,
-        render_pipelines : Vec<wgpu::RenderPipeline>,
-        //render_pipeline: wgpu::RenderPipeline,
+        render_pipeline: wgpu::RenderPipeline,
+
+        vertex_buffer: wgpu::Buffer,
+        num_vertices : u32,
+
+        index_buffer: wgpu::Buffer,
+        num_indices : u32,
 
         size: winit::dpi::PhysicalSize<u32>,
+
+        user_interface : user_interface::UserInterface,
     }
 
     impl State {
@@ -44,10 +103,6 @@ fn main() {
                 limits: Default::default(),
             }).await;
 
-            const VERT_SHADERS: &'static [&'static str] = &[include_str!("shader.vert"), include_str!("shader_2.vert")];
-            const FRAG_SHADERS: &'static [&'static str] = &[include_str!("shader.frag"), include_str!("shader_2.frag")];
-            let mut render_pipelines : Vec<wgpu::RenderPipeline> = Vec::new();
-
             let sc_desc = wgpu::SwapChainDescriptor {
                 usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -58,66 +113,79 @@ fn main() {
             let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
             let clear_color = wgpu::Color::BLACK;
+    
+            let vs_src = include_str!("./shaders/shader_triangle.vert");
+            let fs_src = include_str!("./shaders/shader_triangle.frag");
 
-            for ctr in 0..2 {
-    
-                let vs_src = VERT_SHADERS[ctr];
-                let fs_src = FRAG_SHADERS[ctr];
-    
-                let vs_spirv = glsl_to_spirv::compile(vs_src, glsl_to_spirv::ShaderType::Vertex).unwrap();
-                let fs_spirv = glsl_to_spirv::compile(fs_src, glsl_to_spirv::ShaderType::Fragment).unwrap();
-    
-                let vs_data = wgpu::read_spirv(vs_spirv).unwrap();
-                let fs_data = wgpu::read_spirv(fs_spirv).unwrap();
-    
-                let vs_module = device.create_shader_module(&vs_data);
-                let fs_module = device.create_shader_module(&fs_data);
-    
-                let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    bind_group_layouts: &[],
-                });
+            let vs_spirv = glsl_to_spirv::compile(vs_src, glsl_to_spirv::ShaderType::Vertex).unwrap();
+            let fs_spirv = glsl_to_spirv::compile(fs_src, glsl_to_spirv::ShaderType::Fragment).unwrap();
+
+            let vs_data = wgpu::read_spirv(vs_spirv).unwrap();
+            let fs_data = wgpu::read_spirv(fs_spirv).unwrap();
+
+            let vs_module = device.create_shader_module(&vs_data);
+            let fs_module = device.create_shader_module(&fs_data);
+
+            let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[],
+            });
+            
+            let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                layout: &render_pipeline_layout,
+
+                vertex_stage: wgpu::ProgrammableStageDescriptor {
+                    module: &vs_module,
+                    entry_point: "main",
+                },
                 
-                let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    layout: &render_pipeline_layout,
-                    vertex_stage: wgpu::ProgrammableStageDescriptor {
-                        module: &vs_module,
-                        entry_point: "main",
-                    },
-                    fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                        module: &fs_module,
-                        entry_point: "main",
-                    }),
-    
-                    rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: wgpu::CullMode::Back,
-                        depth_bias: 0,
-                        depth_bias_slope_scale: 0.0,
-                        depth_bias_clamp: 0.0,
-                    }),
-    
-                    color_states: &[
-                        wgpu::ColorStateDescriptor {
-                            format: sc_desc.format,
-                            color_blend: wgpu::BlendDescriptor::REPLACE,
-                            alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                            write_mask: wgpu::ColorWrite::ALL,
-                        },
-                    ],
-    
-                    primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-                    depth_stencil_state: None,
-                    vertex_state: wgpu::VertexStateDescriptor {
-                        index_format: wgpu::IndexFormat::Uint16, 
-                        vertex_buffers: &[],
-                    },
-                    sample_count: 1,
-                    sample_mask: !0,
-                    alpha_to_coverage_enabled: false,
-                });
+                fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                    module: &fs_module,
+                    entry_point: "main",
+                }),
 
-                render_pipelines.push(render_pipeline);
-            }
+                rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: wgpu::CullMode::Back,
+                    depth_bias: 0,
+                    depth_bias_slope_scale: 0.0,
+                    depth_bias_clamp: 0.0,
+                }),
+
+                color_states: &[
+                    wgpu::ColorStateDescriptor {
+                        format: sc_desc.format,
+                        color_blend: wgpu::BlendDescriptor::REPLACE,
+                        alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                        write_mask: wgpu::ColorWrite::ALL,
+                    },
+                ],
+
+                primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+                depth_stencil_state: None,
+                vertex_state: wgpu::VertexStateDescriptor {
+                    index_format: wgpu::IndexFormat::Uint16, 
+                    vertex_buffers: &[
+                        Vertex::desc(),
+                    ],
+                },
+                sample_count: 1,
+                sample_mask: !0,
+                alpha_to_coverage_enabled: false,
+            });
+
+            let vertex_buffer = device.create_buffer_with_data(
+                bytemuck::cast_slice(VERTICES),
+                wgpu::BufferUsage::VERTEX,
+            );
+
+            let num_vertices = VERTICES.len() as u32;
+
+            let index_buffer = device.create_buffer_with_data(
+                bytemuck::cast_slice(INDICES),
+                wgpu::BufferUsage::INDEX,
+            );
+
+            let num_indices = INDICES.len() as u32;
 
             Self {
                 surface,
@@ -127,9 +195,14 @@ fn main() {
                 sc_desc,
                 swap_chain,
                 clear_color,
-                first_pipeline : true,
-                render_pipelines,
+                render_pipeline: render_pipeline,
+                vertex_buffer : vertex_buffer,
+                num_vertices : num_vertices,
+                index_buffer : index_buffer,
+                num_indices : num_indices,
                 size,
+
+                user_interface : user_interface::UserInterface::new(),
             }
 
         } 
@@ -141,7 +214,7 @@ fn main() {
             self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
         }
 
-        fn input(&mut self, event: &WindowEvent) -> bool {
+        fn input(&mut self, event: &WindowEvent, control_flow: &mut ControlFlow) -> bool {
             match event {
                 WindowEvent::CursorMoved {
                     position,
@@ -162,12 +235,26 @@ fn main() {
                     match input {
                         KeyboardInput {
                             state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Space),
+                            virtual_keycode,
                             ..
                         } => {
-                            println!("Switching pipelines! {}", self.first_pipeline);
-                            self.first_pipeline = !self.first_pipeline;
-                            true
+                            let command = self.user_interface.process_key_press(virtual_keycode);
+                            match command {
+                                user_interface::Command::Continue => true,
+                                user_interface::Command::Quit => {
+                                    *control_flow = ControlFlow::Exit; 
+                                    true
+                                }
+                                user_interface::Command::NewShape(num_vertices) => {
+                                    if num_vertices < 3 {
+                                        println!("ERROR! A shape must have greater than 3 vertices");
+                                    } else {
+                                        println!("Drawing a new shape with {} vertices", num_vertices);
+
+                                    }
+                                    true
+                                }
+                            }
                         }
                         _ => false
                     }
@@ -201,12 +288,10 @@ fn main() {
                 depth_stencil_attachment: None,
             });
 
-            if self.first_pipeline {
-                render_pass.set_pipeline(&self.render_pipelines[0]);
-            } else {
-                render_pass.set_pipeline(&self.render_pipelines[1]);
-            }
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
+            render_pass.set_index_buffer(&self.index_buffer, 0, 0);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
 
             drop(render_pass);
             
@@ -231,22 +316,9 @@ fn main() {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == window.id() => if !state.input(event) {
+            } if window_id == window.id() => if !state.input(event, control_flow) {
                 match event {
                     WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                    WindowEvent::KeyboardInput {
-                        input,
-                        ..
-                    } => {
-                        match input {
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            } => *control_flow = ControlFlow::Exit,
-                            _ => {}
-                        }
-                    }
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
                     }

@@ -1,5 +1,5 @@
 [package]
-name = "hello_triangle"
+name = "geometry"
 version = "0.1.0"
 authors = ["luhem7 <mehul.gang@gmail.com>"]
 edition = "2018"
@@ -7,13 +7,4 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-image = "0.22"
-winit = "0.20"
-futures = "0.3.4"
-glsl-to-spirv = "0.1"
-bytemuck = "1.2.0"
-
-[dependencies.wgpu]
-version = "0.5.0"
-features = ["vulkan"]
- 
+random_color = "0.4.4"
